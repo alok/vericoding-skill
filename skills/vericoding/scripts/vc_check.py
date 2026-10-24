@@ -24,6 +24,7 @@ import argparse
 import datetime as _dt
 import enum
 import hashlib
+import itertools
 import json
 import os
 import re
@@ -201,7 +202,7 @@ RULES: dict[Lang, list[Rule]] = {
         _r(r"\b(?:addDecl|addAndCompile|modifyEnv|setEnv)\b", "error",
            "editing the environment directly bypasses elaboration"),
         _r(r"\bnative_decide\b|\bofReduceBool\b|\bdecide\s*\+\s*native\b", "warning",
-           "trusts the compiler (axiom `Lean.ofReduceBool`); say so in the report"),
+           "trusts compiled code instead of the kernel (an extra axiom); say so in the report"),
         _r(r"\bnoncomputable\b", "warning",
            "a noncomputable implementation can't run; make sure it isn't the spec's own witness"),
         _r(r"\bClassical\.(?:choose|choice|epsilon|indefiniteDescription)\b|\bExists\.choose\b",
@@ -488,7 +489,7 @@ _VERUS_INSERT_KW = (
 INSERT_START: dict[Lang, re.Pattern[str]] = {
     Lang.LEAN: re.compile(
         r"(?:@\[|#(?!exit)|(?:(?:private|protected|noncomputable|partial|nonrec|public|meta)\s+)*"
-        r"(?:theorem|lemma|def|abbrev|instance|structure|inductive|class|example|namespace|section|open|"
+        r"(?:import|theorem|lemma|def|abbrev|instance|structure|inductive|class|example|namespace|section|open|"
         r"variable|universe|set_option|attribute|mutual|macro|syntax|notation|infixl?|infixr|prefix|postfix|"
         r"elab|deriving)\b)"
     ),
@@ -532,6 +533,9 @@ def compute_holes(text: str, lang: Lang) -> tuple[str, list[Hole]]:
             holes.append(Hole(s.start(), s.end(), "sorry", "sorry"))
         for s in _LEAN_INSERT.finditer(m):
             holes.append(Hole(s.start(), s.start(), "insert", "new declarations"))
+        imports = list(re.finditer(r"^[ \t]*(?:(?:public|meta|private)[ \t]+)*import\b.*$\n?", m, re.MULTILINE))
+        at = imports[-1].end() if imports else 0
+        holes.append(Hole(at, at, "insert", "new imports or declarations"))
     else:
         decls = dafny_decls(m) if lang is Lang.DAFNY else verus_decls(m)
         editable = ("method", "lemma", "constructor", "by-method") if lang is Lang.DAFNY else ("fn", "proof fn")
@@ -600,7 +604,19 @@ def _seg_pattern(seg: str) -> re.Pattern[str]:
     return re.compile(r"\s*" + body + r"\s*" if parts else r"\s*")
 
 
+MAX_CANDIDATES = 64
+
+
 def freeze_check(orig: str, cur: str, lang: Lang) -> FreezeResult:
+    """Check that `cur` is `orig` with only its holes changed.
+
+    The original is cut into frozen segments around the holes. We look for an
+    embedding of every segment, in order, into `cur` such that each hole's new
+    content is allowed (text inserted between declarations must start a
+    declaration). Comments are ignored and whitespace runs compare equal. The
+    search backtracks, because a short segment such as `}` can also match inside
+    new text.
+    """
     mode, holes = compute_holes(orig, lang)
     mo = mask(orig, lang, strings=False)
     mc = mask(cur, lang, strings=False)
@@ -610,41 +626,68 @@ def freeze_check(orig: str, cur: str, lang: Lang) -> FreezeResult:
         bounds.append((pos, h.start))
         pos = h.end
     bounds.append((pos, len(orig)))  # frozen segments: len(holes) + 1 of them
-    res = FreezeResult(True, mode, len(holes), 0, [])
-    cpos = 0
-    for idx, (a, b) in enumerate(bounds):
-        seg = mo[a:b]
-        pat = _seg_pattern(seg)
+    pats = [_seg_pattern(mo[a:b]) for a, b in bounds]
+    pats[-1] = re.compile(pats[-1].pattern + r"\Z")
+    n = len(pats)
+    failed: set[tuple[int, int]] = set()
+    deepest = [0, 0]
+    rejected: dict[int, tuple[int, str]] = {}
+
+    def hole_ok(i: int, a: int, b: int) -> bool:
+        new = mc[a:b].strip()
+        if holes[i].kind == "insert" and new and not INSERT_START[lang].match(new):
+            rejected[i + 1] = (a + (len(mc[a:b]) - len(mc[a:b].lstrip())), new)
+            return False
+        return True
+
+    def go(idx: int, cpos: int) -> list[tuple[int, int]] | None:
+        if (idx, cpos) in failed:
+            return None
+        if idx > deepest[0]:
+            deepest[:] = [idx, cpos]
         if idx == 0:
-            mt = pat.match(mc, 0)
+            first = pats[0].match(mc, 0)
+            cands = [first] if first else []
         else:
-            mt = pat.search(mc, cpos)
-        last = idx == len(bounds) - 1
-        if mt and last and mc[mt.end() :].strip():
-            # trailing frozen segment must end the file; try a later occurrence
-            later = [x for x in pat.finditer(mc, cpos) if not mc[x.end() :].strip()]
-            mt = later[0] if later else None
-        if not mt:
-            res.ok = False
+            cands = list(itertools.islice(pats[idx].finditer(mc, cpos), MAX_CANDIDATES))
+        for m in cands:
+            if idx > 0 and not hole_ok(idx - 1, cpos, m.start()):
+                continue
+            if idx == n - 1:
+                return [(m.start(), m.end())]
+            rest = go(idx + 1, m.end())
+            if rest is not None:
+                return [(m.start(), m.end()), *rest]
+        failed.add((idx, cpos))
+        return None
+
+    old_limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(max(old_limit, 4 * n + 200))
+    try:
+        spans = go(0, 0)
+    finally:
+        sys.setrecursionlimit(old_limit)
+    res = FreezeResult(True, mode, len(holes), 0, [])
+    if spans is None:
+        res.ok = False
+        idx, cpos = deepest
+        if idx in rejected:
+            off, text = rejected[idx]
+            line, _ = line_col(cur, off)
+            res.problems.append(f"line {line}: text inserted between declarations must start a new declaration; "
+                                f"this would extend the frozen text before it: {text[:80]!r}")
+        else:
+            a, b = bounds[idx]
+            seg = mo[a:b]
             line_a, _ = line_col(orig, a + (len(seg) - len(seg.lstrip())))
             line_b, _ = line_col(orig, max(a, b - 1))
             res.problems.append(_describe_missing(orig[a:b], seg, mc[cpos:], line_a, line_b, cur, cpos))
-            return res
-        if idx > 0:
-            h = holes[idx - 1]
-            span = (cpos, mt.start())
-            res.free_spans.append(span)
-            new = mc[span[0] : span[1]]
-            if new.strip() != mo[h.start : h.end].strip():
-                res.edited_holes += 1
-            if h.kind == "insert" and new.strip() and not INSERT_START[lang].match(new.strip()):
-                res.ok = False
-                line, _ = line_col(cur, span[0] + (len(new) - len(new.lstrip())))
-                res.problems.append(
-                    f"line {line}: text inserted between declarations must start a new declaration; "
-                    f"this would extend the frozen text before it: {new.strip()[:80]!r}"
-                )
-        cpos = mt.end()
+        return res
+    for i, h in enumerate(holes):
+        span = (spans[i][1], spans[i + 1][0])
+        res.free_spans.append(span)
+        if mc[span[0] : span[1]].strip() != mo[h.start : h.end].strip():
+            res.edited_holes += 1
     return res
 
 
@@ -1158,8 +1201,9 @@ def _judge_axioms(axioms: dict[str, list[str]], orig: str, allow_native: bool) -
         for a in extra:
             if a == "sorryAx":
                 bad.append(f"{name} depends on sorryAx")
-            elif a in COMPILER_AXIOMS:
-                (soft if allow_native else bad).append(f"{name} trusts the compiler ({a}, from native_decide)")
+            elif a in COMPILER_AXIOMS or "._native." in a:
+                (soft if allow_native else bad).append(f"{name} trusts compiled code ({a}, from native_decide); "
+                                                     f"pass --allow-native to accept it")
             else:
                 bad.append(f"{name} depends on non-standard axiom {a}")
     lines: list[str] = []
