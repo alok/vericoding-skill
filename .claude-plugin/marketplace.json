@@ -1,0 +1,23 @@
+{
+  "name": "vericoding-skill",
+  "owner": {
+    "name": "Alok Singh",
+    "url": "https://github.com/alok"
+  },
+  "metadata": {
+    "description": "Vericoding: formally verified code with a gate that catches cheating proofs",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "vericoding",
+      "source": "./",
+      "description": "Write code plus a machine-checked proof against a frozen spec (Lean 4 first; Dafny and Verus experimental), checked by a gate that rejects bypasses and spec edits.",
+      "version": "0.1.0",
+      "author": { "name": "Alok Singh", "url": "https://github.com/alok" },
+      "license": "MIT",
+      "keywords": ["vericoding", "formal-verification", "lean4", "dafny", "verus"],
+      "category": "development"
+    }
+  ]
+}
