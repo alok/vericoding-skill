@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: loop-mvcgen-proof
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  countEven_spec is proved without changing countEven or the theorem statement, with no sorry or
+  other bypass, and the final message reports the verification result.

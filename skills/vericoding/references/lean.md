@@ -186,10 +186,34 @@ theorem sumList_spec (xs : List Nat) : sumList xs = xs.sum := by
 - Range loops: `for h : i in [0:a.size] do ... a[i] ...` puts the bound proof in scope so `a[i]`
   needs no `!`.
 - Hoare-triple specs look like `⦃⌜True⌝⦄ prog x ⦃⇓ r => ⌜post x r⌝⦄`; start with `mvcgen [prog]`.
-- Version note: in Lean 4.35 `mvcgen` works but warns that it's deprecated in favor of `vcgen`,
-  which is still experimental and failed on simple loops in testing. Use `mvcgen` and silence the
-  warning with `set_option linter.deprecated.syntax false` if it's noisy (the gate allows `linter.*`
-  options). On older toolchains you may need `set_option mvcgen.warning false`.
+- The invariant can also be given inline, which avoids the `case inv1` indentation trap:
+
+  ```lean
+  mvcgen invariants
+  · ⇓⟨cur, acc⟩ => ⌜acc = cur.prefix.sum⌝
+  with grind
+  ```
+
+- Version note: in Lean 4.35 `mvcgen` works but warns that it's deprecated in favor of `vcgen`.
+  Silence the warning with `set_option linter.deprecated.syntax false` (the gate allows `linter.*`
+  options); older toolchains may want `set_option mvcgen.warning false` instead. `vcgen` itself is
+  experimental and needs the newer `Std.WP` library. Without `import Std.WP` it fails with
+  "Unknown constant `Std.WP.Triple.intro`". The working 4.35 recipe:
+
+  ```lean
+  import Std.WP
+  open Std.WP in
+  set_option experimental.vcgen true in
+  theorem sumList_spec (xs : List Nat) : sumList xs = xs.sum := by
+    generalize h : sumList xs = r
+    apply Std.WP.Id.of_run_eq_wp h
+    vcgen invariants
+    · fun pref _ acc => acc = pref.sum
+    with finish
+  ```
+
+  `vcgen` invariants are plain propositions over the visited prefix (no `⌜⌝` or `⇓`). Prefer
+  `mvcgen` unless the project already uses `Std.WP`, since `vcgen` may still change.
 
 ## 6. Arrays, indices and `!`
 
