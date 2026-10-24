@@ -3,22 +3,28 @@
 Where this skill is listed, how it got there, and what's left. Checked against each venue's own docs
 on 2026-10-24.
 
-## Automatic once the repo is public
+## Live
+
+| Venue | Status (2026-10-24) |
+|---|---|
+| GitHub | https://github.com/alok/vericoding-skill, releases v0.1.0 and v0.1.1 via `gh skill publish` |
+| Claude Code marketplace | `/plugin marketplace add alok/vericoding-skill`, then `/plugin install vericoding@vericoding-skill`; install tested in an isolated config |
+| skills.sh (`npx skills`) | Listed at https://skills.sh/alok/vericoding-skill/vericoding after the first install |
+| `gh skill` | `gh skill install alok/vericoding-skill`; found by `gh skill search vericoding` |
+
+## Crawled, no action needed
 
 | Venue | Mechanism |
 |---|---|
-| Claude Code marketplace | `.claude-plugin/marketplace.json` at the root: `/plugin marketplace add alok/vericoding-skill` |
-| `gh skill` | `gh skill publish --tag vX.Y.Z` validates against the Agent Skills spec, adds the `agent-skills` topic, cuts a release |
-| skills.sh (`npx skills`) | Indexed on the first `npx skills add alok/vericoding-skill`; ranked by installs |
 | SkillsMP, claude-plugins.dev | Crawl public GitHub for `SKILL.md` |
 | claudemarketplaces.com | Crawls marketplace files; pulls install counts from skills.sh |
 | Gemini CLI extension gallery | `gemini-extension.json` at the root plus the `gemini-cli-extension` topic; crawled daily |
 
-## Submitted
+## Submitted, awaiting review
 
-| Venue | How | Notes |
+| Venue | Where | Status |
 |---|---|---|
-| Copilot CLI default marketplace (github/awesome-copilot) | Issue in their external-plugin form format, pinned to a release tag and SHA | Bots run quality gates; a maintainer comments `/approve` |
+| Copilot CLI default marketplace (github/awesome-copilot) | https://github.com/github/awesome-copilot/issues/5397 | All automated gates pass on v0.1.1 (`ready-for-review`); waiting for a maintainer `/approve`. The first run failed for lack of a root `plugin.json`, which v0.1.1 added. |
 
 ## Needs the owner
 
@@ -41,7 +47,8 @@ on 2026-10-24.
 
 ## Releasing a new version
 
-1. Bump `version` in `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
+1. Bump `version` in `plugin.json` (Agent Plugins 1.0, read by Copilot, Codex and Cursor),
+   `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `scripts/vc_check.py` (`VERSION`),
    `gemini-extension.json` and `skills/vericoding/SKILL.md` (`metadata.version`).
 2. `python3 -m unittest discover -s tests` and `claude plugin validate --strict --profile directory .`
 3. `gh skill publish --tag vX.Y.Z`
