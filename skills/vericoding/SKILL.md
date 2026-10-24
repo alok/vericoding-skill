@@ -17,7 +17,7 @@ compatibility: >-
   Dafny and Verus support in the checker is experimental and untested against real verifiers.
 metadata:
   author: Alok Singh
-  version: 0.1.0
+  version: 0.1.1
   homepage: https://github.com/alok/vericoding-skill
 ---
 

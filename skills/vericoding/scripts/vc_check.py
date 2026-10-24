@@ -36,7 +36,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Sequence
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 
 class Lang(str, enum.Enum):

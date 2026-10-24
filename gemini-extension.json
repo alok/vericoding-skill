@@ -1,5 +1,5 @@
 {
   "name": "vericoding-skill",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Vericoding: code plus a machine-checked proof against a frozen spec, Lean 4 first, with a gate that rejects cheating proofs."
 }
