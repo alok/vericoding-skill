@@ -214,4 +214,6 @@ the per-language bypass lists.
 | `references/benchmark-format.md` | The file has `<vc-…>` tags, or the task came from a benchmark |
 | `references/dafny.md`, `references/verus.md` | The task is in Dafny or Verus |
 | `examples/lean/` | You want a worked task and solution: `SumOdds` (recursion), `SumList` (loop with `mvcgen`), `FindFirst` (benchmark format) |
+| `examples/dafny/` | A Dafny task and solution: `MaxArray` (loop invariants), `SumArray` (loop plus an induction lemma) |
+| `examples/verus/` | A Verus task and solution: `max_array` (loop invariants, `decreases`), `find_first` (`Option` result, `match` in `ensures`) |
 | `scripts/vc_check.py` | Always: `holes`, `freeze`, `check`, `scan` |

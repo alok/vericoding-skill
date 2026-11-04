@@ -326,8 +326,14 @@ def _find_body(m: str, start: int, lang: Lang, stop: re.Pattern[str]) -> tuple[i
     depth = 0
     j = start
     n = len(m)
+    block_pending = False  # Verus: a `match`/`if`/`else` in a clause owns the next `{ ... }`
     while j < n:
         c = m[j]
+        if (lang is Lang.VERUS and depth == 0 and (j == 0 or not (m[j - 1].isalnum() or m[j - 1] == "_"))
+                and _VERUS_BLOCK_KW.match(m, j)):
+            block_pending = True
+            j += 1
+            continue
         if c in "([":
             depth += 1
         elif c in ")]":
@@ -343,6 +349,18 @@ def _find_body(m: str, start: int, lang: Lang, stop: re.Pattern[str]) -> tuple[i
                         prev != "" and not (prev[0].isalnum() or prev[0] in "_'?") and prev not in ")]}>"
                     )
                     if is_expr:
+                        j = match_brace(m, j) + 1
+                        continue
+                elif lang is Lang.VERUS:
+                    prev = _prev_sig(m, j)
+                    # `ensures match r { ... }`, `ensures if c { a } else { b }` or `x == { e }`:
+                    # the braces belong to an expression inside a clause, not to the body.
+                    k = j - 1
+                    while k > 0 and m[k].isspace():
+                        k -= 1
+                    arrow = prev == ">" and m[k - 1] == "="  # `==>` or `=>`, not `-> T<U>`
+                    if block_pending or arrow or prev in _VERUS_EXPR_PREV:
+                        block_pending = False
                         j = match_brace(m, j) + 1
                         continue
                 return (j, match_brace(m, j))
@@ -388,6 +406,9 @@ _VERUS_FN = re.compile(
     r"const|async|axiom)\s+)*)fn\s+(\w+)"
 )
 _VERUS_STOP = re.compile(r"(?:fn|struct|enum|impl|trait|mod|use|type|pub)\b")
+_VERUS_BLOCK_KW = re.compile(r"(?:match|if|else)\b")
+# A `{` right after one of these starts a block expression (`a ==> { ... }`, `x == { ... }`).
+_VERUS_EXPR_PREV = {"=", "&", "|", "!", "+", "-", "*", "/", "%", "(", "["}
 
 
 def verus_decls(masked: str) -> list[Decl]:

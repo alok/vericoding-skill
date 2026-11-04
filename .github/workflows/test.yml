@@ -4,18 +4,103 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, to notice new verifier releases breaking the gate
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
+  unit:
+    name: unit (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Unit tests (no verifiers installed, end-to-end tests skip)
+        run: python -m unittest discover -s tests -v
+
+  lean:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install Lean
         run: |
           curl -sSfL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain leanprover/lean4:v4.35.0
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-      - name: Unit and end-to-end tests
-        run: python -m unittest discover -s tests -v
+      - name: Lean end-to-end tests
+        run: python -m unittest tests.test_vc_check.LeanEndToEndTest -v
+
+  dafny:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DAFNY_VERSION: ${{ vars.DAFNY_VERSION }} # empty means the latest release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Install Dafny
+        run: |
+          tag="${DAFNY_VERSION:+v$DAFNY_VERSION}"
+          tag="${tag:-$(gh release view --repo dafny-lang/dafny --json tagName -q .tagName)}"
+          gh release download "$tag" --repo dafny-lang/dafny --pattern '*x64-ubuntu*.zip' --dir "$RUNNER_TEMP"
+          unzip -q "$RUNNER_TEMP"/dafny-*.zip -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/dafny" >> "$GITHUB_PATH"
+      - run: dafny --version
+      - name: Dafny end-to-end tests
+        run: python -m unittest tests.test_vc_check.DafnyEndToEndTest -v
+      - name: Gate output on the examples
+        if: always()
+        run: |
+          for t in skills/vericoding/examples/dafny/*.dfy; do
+            python skills/vericoding/scripts/vc_check.py check "skills/vericoding/examples/dafny/solved/$(basename "$t")" --base "$t" || true
+          done
+
+  verus:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERUS_TAG: ${{ vars.VERUS_TAG }} # empty means the newest release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Verus
+        run: |
+          tag="${VERUS_TAG:-$(gh release list --repo verus-lang/verus --limit 1 --json tagName -q '.[0].tagName')}"
+          echo "Verus release: $tag"
+          gh release download "$tag" --repo verus-lang/verus --pattern '*x86-linux.zip' --dir "$RUNNER_TEMP"
+          unzip -q "$RUNNER_TEMP"/verus-*.zip -d "$RUNNER_TEMP/verus"
+          bin="$(dirname "$(find "$RUNNER_TEMP/verus" -type f -name verus | head -1)")"
+          echo "$bin" >> "$GITHUB_PATH"
+          # Verus needs the exact Rust toolchain it was built with; it names it when it's missing.
+          toolchain="$("$bin/verus" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+-x86_64-unknown-linux-gnu' | head -1 || true)"
+          if [ -n "$toolchain" ]; then rustup install "$toolchain"; fi
+      - run: verus --version
+      - name: Verus end-to-end tests
+        run: python -m unittest tests.test_vc_check.VerusEndToEndTest -v
+      - name: Gate output on the examples
+        if: always()
+        run: |
+          for t in skills/vericoding/examples/verus/*.rs; do
+            python skills/vericoding/scripts/vc_check.py check "skills/vericoding/examples/verus/solved/$(basename "$t")" --base "$t" || true
+          done

@@ -18,6 +18,8 @@ import vc_check as vc  # noqa: E402
 
 L, D, V = vc.Lang.LEAN, vc.Lang.DAFNY, vc.Lang.VERUS
 HAVE_LEAN = shutil.which("lean") is not None
+HAVE_DAFNY = (shutil.which("dafny") or vc.os.environ.get("VC_DAFNY")) is not None
+HAVE_VERUS = (shutil.which("verus") or vc.os.environ.get("VC_VERUS")) is not None
 
 
 def errors(text: str, lang: vc.Lang) -> list[str]:
@@ -243,6 +245,36 @@ class FreezeTest(unittest.TestCase):
         self.assertFalse(self.ok(VERUS_TASK, VERUS_SOLVED.replace("r == double(x as int)", "true"), V))
         self.assertFalse(self.ok(VERUS_TASK, VERUS_SOLVED.replace("{ 2 * x }", "{ x }"), V))
 
+    def test_verus_match_in_ensures_stays_frozen(self) -> None:
+        # The braces of `ensures match r { ... }` belong to the postcondition, not the body.
+        task = (SKILL / "examples/verus/find_first.rs").read_text()
+        solved = (SKILL / "examples/verus/solved/find_first.rs").read_text()
+        _, holes = vc.compute_holes(task, V)
+        bodies = [task[h.start : h.end] for h in holes if h.kind == "body"]
+        self.assertEqual(len(bodies), 1)
+        self.assertNotIn("Some(i)", bodies[0])
+        self.assertTrue(self.ok(task, solved, V))
+        weak = solved.replace("None => forall|j: int| 0 <= j < v.len() ==> v[j] != x", "None => true")
+        self.assertNotEqual(weak, solved)
+        self.assertFalse(self.ok(task, weak, V))
+
+    def test_verus_if_and_arrow_blocks_in_ensures(self) -> None:
+        task = ("fn f(x: u8) -> (r: u8)\n    ensures\n        if x > 0 { r == x } else { r == 1 },\n"
+                "        x == 0 ==> { r > 0 },\n{\n    if x > 0 { x } else { 1 }\n}\n")
+        _, holes = vc.compute_holes(task, V)
+        bodies = [task[h.start : h.end] for h in holes if h.kind == "body"]
+        self.assertEqual([b.strip() for b in bodies], ["{\n    if x > 0 { x } else { 1 }\n}"])
+
+    def test_examples_freeze_cleanly(self) -> None:
+        for lang, ext, names in [(D, "dfy", ["SumArray", "MaxArray"]), (V, "rs", ["max_array", "find_first"])]:
+            for name in names:
+                with self.subTest(name=name):
+                    task = (SKILL / f"examples/{lang.value}/{name}.{ext}").read_text()
+                    solved = (SKILL / f"examples/{lang.value}/solved/{name}.{ext}").read_text()
+                    r = vc.freeze_check(task, solved, lang)
+                    self.assertTrue(r.ok, r.problems)
+                    self.assertEqual(r.edited_holes >= 1, True)
+
     def test_benchmark_dafny(self) -> None:
         task = ("// <vc-preamble>\nfunction F(x: int): int { x + 1 }\n// </vc-preamble>\n\n"
                 "// <vc-helpers>\n// </vc-helpers>\n\n// <vc-spec>\nmethod M(x: int) returns (r: int)\n"
@@ -308,6 +340,82 @@ class LeanEndToEndTest(unittest.TestCase):
         cur = "theorem big : 2 ^ 20 = 1048576 := by\n  native_decide\n"
         self.assertEqual(self.check(task, cur), 1)
         self.assertEqual(self.check(task, cur, "--allow-native"), 0)
+
+
+class _VerifierEndToEnd(unittest.TestCase):
+    """Shared end-to-end checks for Dafny and Verus, run only when the verifier is installed."""
+
+    lang = D
+    ext = ""
+    examples: list[str] = []
+
+    def run_check(self, task: str, cur: str) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as d:
+            base, f = Path(d) / f"base.{self.ext}", Path(d) / f"cur.{self.ext}"
+            base.write_text(task)
+            f.write_text(cur)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                code = vc.main(["check", str(f), "--base", str(base)])
+            return code, out.getvalue()
+
+    def example(self, name: str) -> tuple[str, str]:
+        d = SKILL / "examples" / self.lang.value
+        return (d / f"{name}.{self.ext}").read_text(), (d / "solved" / f"{name}.{self.ext}").read_text()
+
+    def test_examples_verify(self) -> None:
+        for name in self.examples:
+            with self.subTest(name=name):
+                code, out = self.run_check(*self.example(name))
+                self.assertEqual(code, 0, out)
+                self.assertIn("VERIFIED", out)
+
+    def test_unsolved_tasks_are_not_verified(self) -> None:
+        for name in self.examples:
+            with self.subTest(name=name):
+                task, _ = self.example(name)
+                code, out = self.run_check(task, task)
+                self.assertEqual(code, 1, out)
+
+    def test_assume_false_cheat(self) -> None:
+        task, _ = self.example(self.examples[0])
+        cheat = self.cheat(task)
+        self.assertNotEqual(cheat, task)
+        code, out = self.run_check(task, cheat)
+        self.assertEqual(code, 1, out)
+        self.assertIn("assume", out)
+
+    def cheat(self, task: str) -> str:
+        raise NotImplementedError
+
+
+@unittest.skipUnless(HAVE_DAFNY, "dafny not installed")
+class DafnyEndToEndTest(_VerifierEndToEnd):
+    lang, ext, examples = D, "dfy", ["SumArray", "MaxArray"]
+
+    def cheat(self, task: str) -> str:
+        return task.replace("  total := 0;\n}", "  total := 0;\n  assume total == Sum(a[..]);\n}")
+
+    def test_cheat_really_verifies_without_the_gate(self) -> None:
+        # Sanity check that the cheat is one: dafny alone accepts it (with a warning), the gate doesn't.
+        task, _ = self.example("SumArray")
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "c.dfy"
+            f.write_text(self.cheat(task))
+            dafny = vc._which("dafny", "VC_DAFNY")
+            p = vc.subprocess.run([dafny, "verify", "--allow-warnings", str(f)], capture_output=True, text=True)
+            self.assertIn("0 errors", p.stdout + p.stderr)
+
+
+@unittest.skipUnless(HAVE_VERUS, "verus not installed")
+class VerusEndToEndTest(_VerifierEndToEnd):
+    lang, ext, examples = V, "rs", ["max_array", "find_first"]
+
+    def cheat(self, task: str) -> str:
+        return task.replace("{\n    a[0]\n}", "{\n    assume(false);\n    a[0]\n}")
+
+
+del _VerifierEndToEnd  # only the concrete subclasses run
 
 
 if __name__ == "__main__":
