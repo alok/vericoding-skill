@@ -2,7 +2,7 @@
 name: vericoding
 description: >-
   Vericoding: write code together with a machine-checked proof that it meets a frozen formal spec,
-  Lean 4 first (Dafny and Verus experimental), and refuse to call it done until a gate confirms the
+  in Lean 4, Dafny or Verus, and refuse to call it done until a gate confirms the
   verifier accepted it, the spec is untouched, and no sorry/admit/axiom/assume or other bypass was
   slipped in. Use whenever the user wants verified, proven-correct or correct-by-construction code;
   asks to implement a def and prove its spec theorem; to fill `sorry` placeholders in a program and
@@ -14,7 +14,7 @@ description: >-
 license: MIT
 compatibility: >-
   Needs Python 3.10+ for scripts/vc_check.py and a Lean 4 toolchain (elan; lake for projects).
-  Dafny and Verus support in the checker is experimental and untested against real verifiers.
+  Dafny 4.x or Verus only for those languages.
 metadata:
   author: Alok Singh
   version: 0.1.1
@@ -197,11 +197,12 @@ Remaining work: <goals left open, if not verified>
   progress with the exact remaining goal instead of escalating to cheats. Give the next person
   the goal state, what you tried, and your best guess at the missing lemma.
 
-## Dafny and Verus (experimental)
+## Dafny and Verus
 
-The workflow is the same. The gate's bypass scan and spec freeze are unit-tested for both
-languages, but its verifier runners (`dafny verify`, `verus`) have not yet been exercised against
-real installs, so double-check its output against the raw verifier output. See
+The workflow is the same: `holes`, `freeze`, check the spec, implement, prove, `check`. Instead
+of `#guard`, run the implementation on examples in a scratch copy: a `method Main` with `print`
+under `dafny run`, or a `fn main` with `assert!` under `verus --compile`. The gate is tested against both verifiers, but it has no elaborated-statement or
+axiom check for them, so a clean bypass scan and spec freeze are the whole story. See
 `references/dafny.md` and `references/verus.md` for loop invariants, termination, ghost code and
 the per-language bypass lists.
 
@@ -214,4 +215,6 @@ the per-language bypass lists.
 | `references/benchmark-format.md` | The file has `<vc-…>` tags, or the task came from a benchmark |
 | `references/dafny.md`, `references/verus.md` | The task is in Dafny or Verus |
 | `examples/lean/` | You want a worked task and solution: `SumOdds` (recursion), `SumList` (loop with `mvcgen`), `FindFirst` (benchmark format) |
+| `examples/dafny/` | A Dafny task and solution: `MaxArray` (loop invariants), `SumArray` (loop plus an induction lemma) |
+| `examples/verus/` | A Verus task and solution: `max_array` (loop invariants, `decreases`), `find_first` (`Option` result, `match` in `ensures`) |
 | `scripts/vc_check.py` | Always: `holes`, `freeze`, `check`, `scan` |

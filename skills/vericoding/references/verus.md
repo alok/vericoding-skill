@@ -1,8 +1,9 @@
-# Verus (experimental)
+# Verus
 
-Status: the gate's Verus bypass scan and spec freeze are unit-tested; its `verus` runner has not yet
-been run against a real Verus install. Read the raw verifier output alongside the gate's verdict,
-and report any disagreement.
+Status: the gate is tested end to end against the latest Verus release in CI. Worked examples live
+in `examples/verus/` (`max_array`: loop invariants and `decreases`; `find_first`: an `Option`
+result specified with `match` in `ensures`). Unlike Lean, there is no elaborated-statement or axiom
+check, so the bypass scan and spec freeze carry the whole load. Keep helpers inside `verus! { }`.
 
 ## Running
 

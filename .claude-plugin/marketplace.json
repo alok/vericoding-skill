@@ -12,7 +12,7 @@
     {
       "name": "vericoding",
       "source": "./",
-      "description": "Write code plus a machine-checked proof against a frozen spec (Lean 4 first; Dafny and Verus experimental), checked by a gate that rejects bypasses and spec edits.",
+      "description": "Write code plus a machine-checked proof against a frozen spec (Lean 4, Dafny or Verus), checked by a gate that rejects bypasses and spec edits.",
       "version": "0.1.1",
       "author": { "name": "Alok Singh", "url": "https://github.com/alok" },
       "license": "MIT",

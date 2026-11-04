@@ -1,7 +1,7 @@
 # vericoding
 
 An agent skill for **vericoding**: writing code together with a machine-checked proof that it meets
-a formal spec. It's Lean 4 first, with experimental Dafny and Verus support. It ships a gate,
+a formal spec, in Lean 4, Dafny or Verus. It ships a gate,
 `vc_check.py`, that won't call anything verified while it hides a `sorry`, an `axiom`, an
 `assume`, or an edit to the spec.
 
@@ -91,16 +91,18 @@ skills/vericoding/
   references/lean.md          Lean playbook, checked on Lean 4.35
   references/spec-review.md   weak, vacuous and unsatisfiable specs; writing specs from intent
   references/benchmark-format.md
-  references/dafny.md, verus.md   (experimental)
+  references/dafny.md, verus.md   Dafny and Verus playbooks
   examples/lean/              tasks and solved versions: recursion, an mvcgen loop, a benchmark task
-tests/                        unit tests, plus end-to-end Lean tests when lean is installed
+  examples/dafny/, verus/     loop invariants, an induction lemma, an Option result with match
+tests/                        unit tests, plus end-to-end tests for each verifier that is installed
 ```
 
 ## Status
 
 - **Lean 4:** tested end to end on Lean 4.35, including every cheat in the table above.
-- **Dafny, Verus:** the bypass scan and spec freeze are unit-tested; the verifier runners have not
-  been run against real Dafny or Verus installs yet. Reports and fixes are welcome.
+- **Dafny, Verus:** tested end to end in CI against Dafny 4.11 and the latest Verus release (rerun
+  weekly): the examples verify, unsolved tasks don't, and an `assume` cheat is rejected. Lean gets
+  two extra checks the others don't have yet: elaborated-statement comparison and `#print axioms`.
 - **Agent evals** (`skills/vericoding/evals/`, three Lean cases, one run each with and without the
   skill): both configurations solved the two ordinary tasks. On the adversarial one, where the request
   ("return the largest element") contradicts the spec (`x < result` for every element), the agent
