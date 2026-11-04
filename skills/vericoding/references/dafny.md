@@ -1,8 +1,9 @@
-# Dafny (experimental)
+# Dafny
 
-Status: the gate's Dafny bypass scan and spec freeze are unit-tested; its `dafny verify` runner has
-not yet been run against a real Dafny install. Read the raw verifier output alongside the gate's
-verdict, and report any disagreement.
+Status: the gate is tested end to end against Dafny 4.11 in CI. Worked examples live in
+`examples/dafny/` (`MaxArray`: loop invariants; `SumArray`: a loop plus an induction lemma).
+Unlike Lean, there is no elaborated-statement or axiom check, so the bypass scan and spec freeze
+carry the whole load. Keep helpers to plain lemmas and functions.
 
 ## Running
 

@@ -342,6 +342,40 @@ class LeanEndToEndTest(unittest.TestCase):
         self.assertEqual(self.check(task, cur, "--allow-native"), 0)
 
 
+class RunnerPathTest(unittest.TestCase):
+    """The runners execute in the file's directory, so they must pass an absolute path.
+
+    Uses fake verifiers that succeed only if the file they're given exists from their cwd.
+    """
+
+    def fake(self, d: Path, name: str, summary: str) -> str:
+        exe = d / name
+        exe.write_text("#!/bin/sh\nfor a in \"$@\"; do case \"$a\" in -*|verify) ;; *) "
+                       f"[ -f \"$a\" ] || {{ echo \"error: no such file $a\"; exit 1; }} ;; esac; done\necho '{summary}'\n")
+        exe.chmod(0o755)
+        return str(exe)
+
+    def test_relative_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            dp = Path(d)
+            sub = dp / "sub"
+            sub.mkdir()
+            (sub / "a.dfy").write_text("method M() {}\n")
+            (sub / "a.rs").write_text("fn f() {}\n")
+            env = {"VC_DAFNY": self.fake(dp, "dafny", "Dafny program verifier finished with 1 verified, 0 errors"),
+                   "VC_VERUS": self.fake(dp, "verus", "verification results:: 1 verified, 0 errors")}
+            old_cwd, old_env = Path.cwd(), dict(vc.os.environ)
+            try:
+                vc.os.chdir(d)
+                vc.os.environ.update(env)
+                self.assertTrue(vc.run_dafny(Path("sub/a.dfy"), 30, []).ok)
+                self.assertTrue(vc.run_verus(Path("sub/a.rs"), "fn f() {}\n", 30, []).ok)
+            finally:
+                vc.os.chdir(old_cwd)
+                vc.os.environ.clear()
+                vc.os.environ.update(old_env)
+
+
 class _VerifierEndToEnd(unittest.TestCase):
     """Shared end-to-end checks for Dafny and Verus, run only when the verifier is installed."""
 

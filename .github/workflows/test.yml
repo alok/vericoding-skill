@@ -67,11 +67,10 @@ jobs:
       - run: dafny --version
       - name: Dafny end-to-end tests
         run: python -m unittest tests.test_vc_check.DafnyEndToEndTest -v
-      - name: Gate output on the examples
-        if: always()
+      - name: Gate CLI on the examples (relative paths, as an agent runs it)
         run: |
           for t in skills/vericoding/examples/dafny/*.dfy; do
-            python skills/vericoding/scripts/vc_check.py check "skills/vericoding/examples/dafny/solved/$(basename "$t")" --base "$t" || true
+            python skills/vericoding/scripts/vc_check.py check "skills/vericoding/examples/dafny/solved/$(basename "$t")" --base "$t"
           done
 
   verus:
@@ -98,9 +97,8 @@ jobs:
       - run: verus --version
       - name: Verus end-to-end tests
         run: python -m unittest tests.test_vc_check.VerusEndToEndTest -v
-      - name: Gate output on the examples
-        if: always()
+      - name: Gate CLI on the examples (relative paths, as an agent runs it)
         run: |
           for t in skills/vericoding/examples/verus/*.rs; do
-            python skills/vericoding/scripts/vc_check.py check "skills/vericoding/examples/verus/solved/$(basename "$t")" --base "$t" || true
+            python skills/vericoding/scripts/vc_check.py check "skills/vericoding/examples/verus/solved/$(basename "$t")" --base "$t"
           done

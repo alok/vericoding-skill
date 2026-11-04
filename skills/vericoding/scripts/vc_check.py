@@ -835,7 +835,7 @@ def run_dafny(path: Path, timeout: int, extra: Sequence[str]) -> VerifierResult:
     dafny = _which("dafny", "VC_DAFNY")
     if not dafny:
         return VerifierResult(False, False, "dafny", 0.0, "dafny not found (brew install dafny, or set VC_DAFNY)")
-    cmd = [dafny, "verify", *extra, str(path)]
+    cmd = [dafny, "verify", *extra, str(path.resolve())]  # absolute: the verifier runs in path.parent
     t0 = time.monotonic()
     try:
         p = subprocess.run(cmd, cwd=path.parent, capture_output=True, text=True, timeout=timeout)
@@ -868,7 +868,7 @@ def run_verus(path: Path, text: str, timeout: int, extra: Sequence[str]) -> Veri
     if not verus:
         return VerifierResult(False, False, "verus", 0.0, "verus not found (install a verus-lang/verus release, or set VC_VERUS)")
     has_main = re.search(r"\bfn\s+main\s*\(", mask(text, Lang.VERUS)) is not None
-    cmd = [verus, str(path), *([] if has_main else ["--crate-type=lib"]), *extra]
+    cmd = [verus, str(path.resolve()), *([] if has_main else ["--crate-type=lib"]), *extra]
     t0 = time.monotonic()
     try:
         p = subprocess.run(cmd, cwd=path.parent, capture_output=True, text=True, timeout=timeout)
